@@ -2,7 +2,7 @@
 
 ---
 
-##  Table of contents
+## Table of contents
 
 - [overview](#overview)
 - [prerequisites](#prerequisites)
