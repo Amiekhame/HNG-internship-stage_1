@@ -5,6 +5,12 @@ USER_FILE="$1"
 LOG_FILE="/var/log/user_management.log"
 PASSWORD_FILE="/var/secure/user_passwords.csv"
 
+#set sudo privilages
+if [ "$EUID" -ne 0 ]
+  then echo "Please run as root"
+  exit
+fi
+
 # Function to log messages
 log_message() {
     local MESSAGE="$1"
