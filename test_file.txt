@@ -1,0 +1,5 @@
+emma;devops,qa,sales
+tosin;qa ,sales
+femi; hr,devops
+tola;admin
+shayo;admin,hr 
