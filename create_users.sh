@@ -1,89 +1,138 @@
 #!/bin/bash
 
-# Check if the script is run as root
-if [ "$EUID" -ne 0 ]; then
-  echo "This script requires root permissions. Re-running with sudo..."
-  sudo "$0" "$@"
-  exit $?
+# Step 1: Check if the script is being run as root, if not, request root access
+echo "################# Checking if the script is being run as root..."
+if [[ "$(id -u)" -ne 0 ]]; then
+echo "This script needs to be run as root. Trying to elevate privileges..."
+echo "################# Re-running the script with elevated privileges..."
+sudo -E "$0" "$@"
+exit
 fi
 
-# Variables
-USER_FILE="$1"
-LOG_FILE="/var/log/user_management.log"
-PASSWORD_FILE="/var/secure/user_passwords.csv"
+# Step 2: Create the log and password files and set appropriate permissions
+echo "################# Creating log and password files..."
+secure_dir="/var/secure"
+log_dir="/var/log"
+log_file="/var/log/user_management.log"
+password_file="/var/secure/user_passwords.csv"
 
-# Function to log messages
-log_message() {
-    local MESSAGE="$1"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $MESSAGE" | tee -a "$LOG_FILE"
+if [[ ! -d "$log_dir" ]]; then # Check if the log directory exists
+echo "################# Log dir does not exist: Creating log directory..."
+mkdir "$log_dir"
+else
+echo "################# Log directory exists..."
+fi
+
+if [[ ! -d "$secure_dir" ]]; then # Check if the secure directory exists
+echo "################# Secure dir does not exist: Creating secure directory..."
+mkdir "$secure_dir"
+else
+echo "################# Secure directory exists..."
+fi
+
+touch "$log_file"
+touch "$password_file"
+
+echo "################# Setting permissions..."
+chmod 640 "$log_file" # Only root and members of root's group can read and write, others cannot access
+chmod 600 "$password_file" # Only root can read and write
+
+# Step 3: Log all the commands and their output to the file in /var/log/ called user_management.log
+echo "################# Logging all the commands and their output..."
+exec > >(tee -a "$log_file") 2>&1
+
+# Step 4: Prompt the user to enter the name of the file containing the list of users and groups if not provided as an argument
+echo "################# Prompting for the file containing the list of users and groups..."
+user_file=$1
+if [[ -z "$user_file" ]]; then
+read -p "Enter the name of the file containing the list of users and groups with its full path: " user_file
+fi
+
+# Step 5: Check if the file exists, if not exit the script, else proceed
+echo "################# Checking if the file exists..."
+if [[ ! -f "$user_file" ]]; then
+echo "################ Error: The file does not exist. Please provide a valid file name."
+exit 1
+else
+echo "################ File exists. Proceeding with the script..."
+fi
+
+# Step 6: Create a function to create random passwords for the users
+echo "################# Creating a function to generate random passwords..."
+generate_password() {
+# Generate a random password using openssl
+openssl rand -base64 8
 }
 
-# Check if the user file exists
-if [[ ! -f "$USER_FILE" ]]; then
-    log_message "Error: User file $USER_FILE not found."
-    exit 1
+# Step 7: Read the file line by line and create users with a home directory and random password and add them to the appropriate groups
+echo "################# Reading the file and creating users..."
+while IFS=";" read -r username groups; do
+# Skip the line if it starts with a comment
+echo "################# Checking if line is a comment..."
+[[ "$username" =~ ^#.*$ ]] && continue
+
+# Skip the line if the username or groups is empty
+echo "################# Checking if the username or groups is empty..."
+[[ -z "$username" || -z "$groups" ]] && continue
+
+# Remove leading and trailing whitespaces
+echo "################# Removing leading and trailing whitespaces..."
+username=$(echo "$username" | xargs)
+groups=$(echo "$groups" | xargs)
+
+echo "################# Processing user: $username..."
+
+# Check if the user already exists
+echo "################# Checking if $username already exists..."
+if id "$username" &>/dev/null; then
+   echo "################ User $username already exists. Skipping..."
+   continue
 fi
 
-# Ensure the secure directory exists
-mkdir -p /var/secure
-chmod 700 /var/secure
+# Generate a random password
+echo "################ Generating a random password for new user..."
+password=$(generate_password)
 
-# Clear the previous password file and log file
-: > "$PASSWORD_FILE"
-: > "$LOG_FILE"
+# Encrypt the password
+echo "################ Encrypting newly generated password to pass to the user with the -p flag..."
+encrypted_password=$(openssl passwd -6 "$password")
 
-# Loop through each line in the user file
-while IFS=';' read -r USER GROUPS; do
-    USER=$(echo "$USER" | xargs) # Remove leading/trailing whitespace
-    GROUPS=$(echo "$GROUPS" | xargs) # Remove leading/trailing whitespace
-    
-    # Check if the user already exists
-    if id -u "$USER" >/dev/null 2>&1; then
-        log_message "User $USER already exists. Skipping."
-        continue
-    fi
+# Create the user with the encrypted password
+echo "################ Creating $username with the encrypted password..."
+if useradd -m -p "$encrypted_password" "$username"; then
+   echo "################ User $username created with password"
+else
+   echo "################ Error creating user $username"
+   continue
+fi
 
-    # Create a personal group for the user if it doesn't exist
-    if ! getent group "$USER" >/dev/null; then
-        groupadd "$USER"
-        log_message "Group $USER created."
-    fi
+# Split groups by comma and iterate over each group
+echo "################ Splitting $groups with ',' into an array of groups..."
+IFS=',' read -ra ADDR <<< "$groups"
+for group in "${ADDR[@]}"; do
 
-    # Create additional groups if they don't exist
-    IFS=',' read -ra GROUP_ARRAY <<< "$GROUPS"
-    for GROUP in "${GROUP_ARRAY[@]}"; do
-        GROUP=$(echo "$GROUP" | xargs) # Remove leading/trailing whitespace
-        if ! getent group "$GROUP" >/dev/null; then
-            groupadd "$GROUP"
-            log_message "Group $GROUP created."
-        fi
-    done
+# Remove leading and trailing whitespaces
+echo "################ Removing leading and trailing whitespaces..."
+group=$(echo "$group" | xargs)
 
-    # Create the user with the specified groups, including their personal group
-    useradd -m -g "$USER" -G "$GROUPS" "$USER"
-    if [[ $? -ne 0 ]]; then
-        log_message "Error: Failed to create user $USER."
-        continue
-    fi
+   # Check if the group exists, if not, create the group
+   echo "################ Checking if $group exists..."
+   if ! getent group "$group" > /dev/null 2>&1; then
+      groupadd "$group"
+      echo "Group $group created."
+   fi
 
-    # Generate a random password
-    PASSWORD=$(openssl rand -base64 12)
-    echo "$USER:$PASSWORD" | chpasswd
-    if [[ $? -ne 0 ]]; then
-        log_message "Error: Failed to set password for $USER."
-        continue
-    fi
+   # Add the user to the specified group
+   echo "Adding $username to $group..."
+   if ! usermod -aG "$group" "$username"; then
+      echo "################# Error adding $username to $group..."
+   else
+      echo "################# User $username added to group $group..."
+   fi
+done
 
-    # Save the password securely in CSV format
-    echo "$USER,$PASSWORD" >> "$PASSWORD_FILE"
-    chmod 600 "$PASSWORD_FILE"
+# Store the username and encrypted password in the password file
+echo "$username,$password" >> "$password_file"
+done < "$user_file"
 
-    # Set up home directory permissions
-    chmod 700 "/home/$USER"
-    chown "$USER:$USER" "/home/$USER"
-
-    log_message "User $USER created with groups $GROUPS."
-done < "$USER_FILE"
-
-log_message "User creation process completed."
-exit 0
+echo "################# User creation process completed successfully."
