@@ -5,17 +5,17 @@ USER_FILE="$1"
 LOG_FILE="/var/log/user_management.log"
 PASSWORD_FILE="/var/secure/user_passwords.csv"
 
-#set sudo privilages
-if [[ "$(id -u)" -ne 0 ]];
-    then echo "Please run as root"
+# Ensure the script is run with sudo privileges
+if [[ "$(id -u)" -ne 0 ]]; then
+    echo "Please run as root"
     sudo -E "$0" "$@"
-    exit
+    exit 1
 fi
 
 # Function to log messages
 log_message() {
     local MESSAGE="$1"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $MESSAGE" | tee -a "$LOG_FILE"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $MESSAGE" >> "$LOG_FILE"
 }
 
 # Check if the user file exists
@@ -28,9 +28,9 @@ fi
 mkdir -p /var/secure
 chmod 700 /var/secure
 
-# # Clear the previous password file and log file
-# : > "$PASSWORD_FILE"
-# : > "$LOG_FILE"
+# Clear the previous password file and log file
+: > "$PASSWORD_FILE"
+: > "$LOG_FILE"
 
 # Loop through each line in the user file
 while IFS=';' read -r USER GROUPS; do
@@ -86,4 +86,3 @@ while IFS=';' read -r USER GROUPS; do
 done < "$USER_FILE"
 
 log_message "User creation process completed."
-# exit 0
