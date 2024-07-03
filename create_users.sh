@@ -8,6 +8,7 @@ PASSWORD_FILE="/var/secure/user_passwords.csv"
 #set sudo privilages
 if [ "$EUID" -ne 0 ]
   then echo "Please run as root"
+  sudo -E $0 $@
   exit
 fi
 
