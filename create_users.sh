@@ -28,9 +28,9 @@ fi
 mkdir -p /var/secure
 chmod 700 /var/secure
 
-# Clear the previous password file and log file
-: > "$PASSWORD_FILE"
-: > "$LOG_FILE"
+# # Clear the previous password file and log file
+# : > "$PASSWORD_FILE"
+# : > "$LOG_FILE"
 
 # Loop through each line in the user file
 while IFS=';' read -r USER GROUPS; do
@@ -86,4 +86,4 @@ while IFS=';' read -r USER GROUPS; do
 done < "$USER_FILE"
 
 log_message "User creation process completed."
-exit 0
+# exit 0
