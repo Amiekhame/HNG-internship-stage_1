@@ -12,25 +12,18 @@ if [[ "$(id -u)" -ne 0 ]]; then
     exit 1
 fi
 
-# Function to log messages
-log_message() {
-    local MESSAGE="$1"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $MESSAGE" >> "$LOG_FILE"
-}
+# Log messages to the log file
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 # Check if the user file exists
 if [[ ! -f "$USER_FILE" ]]; then
-    log_message "Error: User file $USER_FILE not found."
+    echo "Error: User file $USER_FILE not found."
     exit 1
 fi
 
 # Ensure the secure directory exists
 mkdir -p /var/secure
 chmod 700 /var/secure
-
-# Clear the previous password file and log file
-: > "$PASSWORD_FILE"
-: > "$LOG_FILE"
 
 # Loop through each line in the user file
 while IFS=';' read -r USER GROUPS; do
@@ -39,14 +32,14 @@ while IFS=';' read -r USER GROUPS; do
     
     # Check if the user already exists
     if id -u "$USER" >/dev/null 2>&1; then
-        log_message "User $USER already exists. Skipping."
+        echo "User $USER already exists. Skipping."
         continue
     fi
 
     # Create a personal group for the user if it doesn't exist
     if ! getent group "$USER" >/dev/null; then
         groupadd "$USER"
-        log_message "Group $USER created."
+        echo "Group $USER created."
     fi
 
     # Create additional groups if they don't exist
@@ -55,14 +48,14 @@ while IFS=';' read -r USER GROUPS; do
         GROUP=$(echo "$GROUP" | xargs) # Remove leading/trailing whitespace
         if ! getent group "$GROUP" >/dev/null; then
             groupadd "$GROUP"
-            log_message "Group $GROUP created."
+            echo "Group $GROUP created."
         fi
     done
 
     # Create the user with the specified groups, including their personal group
     useradd -m -g "$USER" -G "$GROUPS" "$USER"
     if [[ $? -ne 0 ]]; then
-        log_message "Error: Failed to create user $USER."
+        echo "Error: Failed to create user $USER."
         continue
     fi
 
@@ -70,7 +63,7 @@ while IFS=';' read -r USER GROUPS; do
     PASSWORD=$(openssl rand -base64 12)
     echo "$USER:$PASSWORD" | chpasswd
     if [[ $? -ne 0 ]]; then
-        log_message "Error: Failed to set password for $USER."
+        echo "Error: Failed to set password for $USER."
         continue
     fi
 
@@ -82,7 +75,7 @@ while IFS=';' read -r USER GROUPS; do
     chmod 700 "/home/$USER"
     chown "$USER:$USER" "/home/$USER"
 
-    log_message "User $USER created with groups $GROUPS."
+    echo "User $USER created with groups $GROUPS."
 done < "$USER_FILE"
 
-log_message "User creation process completed."
+echo "User creation process completed."
